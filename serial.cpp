@@ -333,6 +333,54 @@ void hsvToRgb(cv::Mat& inputImage, cv::Mat& outputImage) {
     }
 }
 
+// 合併的直方圖計算和均衡化函數
+/**
+ * @brief   計算直方圖並對灰階影像做直方圖均衡化
+ * @details 依序完成以下步驟：
+ *            1. 計算原影像的直方圖  
+ *            2. 計算累積分布函數 (CDF)  
+ *            3. 建立灰階映射查找表 (LUT)  
+ *            4. 套用 LUT，輸出均衡化後影像  
+ *
+ * @param inputImage   輸入的灰階影像 (CV_8UC1)
+ * @param outputImage  均衡化後的灰階影像 (CV_8UC1)，在函式內 clone 並寫入
+ */
+void histogramCalcAndEqual(const cv::Mat& inputImage, cv::Mat& outputImage) {
+    // 1. 計算直方圖：histogram[i] = 灰階值 i 的像素數
+    unsigned int histogram[256] = {0};
+    for (int y = 0; y < inputImage.rows; ++y) {
+        for (int x = 0; x < inputImage.cols; ++x) {
+            uchar val = inputImage.at<uchar>(y, x);
+            histogram[val]++;
+        }
+    }
+    
+    // 2. 計算累積分布函數 (CDF)：cdf[i] = sum_{j=0..i} histogram[j]
+    int totalPixels = inputImage.rows * inputImage.cols;
+    int cdf[256] = {0};
+    cdf[0] = histogram[0];
+    for (int i = 1; i < 256; ++i) {
+        cdf[i] = cdf[i - 1] + histogram[i];
+    }
+    
+    // 3. 建立查找表 (LUT)：LUT[i] = round( (L-1) * CDF[i] / MN )
+    //    scale = 255.0f / totalPixels
+    uchar lut[256];
+    float scale = 255.0f / static_cast<float>(totalPixels);
+    for (int i = 0; i < 256; ++i) {
+        lut[i] = cv::saturate_cast<uchar>(scale * cdf[i]);
+    }
+    
+    // 4. 套用 LUT：對每個像素 r，輸出 lut[r]
+    outputImage = inputImage.clone();
+    for (int y = 0; y < inputImage.rows; ++y) {
+        for (int x = 0; x < inputImage.cols; ++x) {
+            uchar r = inputImage.at<uchar>(y, x);
+            outputImage.at<uchar>(y, x) = lut[r];
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // 處理命令行參數
@@ -392,7 +440,7 @@ int main(int argc, char *argv[])
     std::ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
-            << "Histogram Calculation,Histogram Equalization,HSVtoRGB,Total Time" << std::endl;
+            << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
     // 定義迭代次數
     int numIter = 10; // 減少迭代次數以加快處理
@@ -472,30 +520,20 @@ int main(int argc, char *argv[])
     std::cout << "Image Sharpening Time: " << sharpenTime.count() << " ms" << std::endl;
     
     // STEP 3 - GLOBAL ENHANCEMENT (直方圖均衡化)
-    unsigned int histogram[256] = {0};
     cv::Mat globallyEnhancedImage;
     
-    // 計算直方圖
+    auto histogramTotalTime = std::chrono::duration<double, std::milli>::zero();
+
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
-        histogramCalc(sharpenedImage, histogram); // 使用與 main.cpp 對應的函數
+        histogramCalcAndEqual(sharpenedImage, globallyEnhancedImage);
         end = std::chrono::high_resolution_clock::now();
-        histogramCalcTime += (end - start);
+        histogramTotalTime += (end - start);
     }
-    histogramCalcTime /= numIter;
-    
-    std::cout << "Histogram Calculation Time: " << histogramCalcTime.count() << " ms" << std::endl;
-    
-    // 直方圖均衡化
-    for (int i = 0; i < numIter; ++i) {
-        start = std::chrono::high_resolution_clock::now();
-        histogramEqual(sharpenedImage, globallyEnhancedImage, histogram); // 使用與 main.cpp 對應的函數
-        end = std::chrono::high_resolution_clock::now();
-        histogramEqualTime += (end - start);
-    }
-    histogramEqualTime /= numIter;
-    
-    std::cout << "Histogram Equalization Time: " << histogramEqualTime.count() << " ms" << std::endl;
+    histogramTotalTime /= numIter;
+
+    std::cout << "Combined Histogram Calculation and Equalization Time: " 
+              << histogramTotalTime.count() << " ms" << std::endl;
     
     // 合併 HSV 通道
     cv::Mat outputHSV;
@@ -517,7 +555,7 @@ int main(int argc, char *argv[])
     
     // 計算總時間
     auto totalTime = rgbToHsvTime + blurTime + subtractTime + sharpenTime + 
-                     histogramCalcTime + histogramEqualTime + hsvToRgbTime;
+                     histogramTotalTime + hsvToRgbTime;
     
     std::cout << "Total Processing Time: " << totalTime.count() << " ms" << std::endl;
     
@@ -532,8 +570,7 @@ int main(int argc, char *argv[])
             << blurTime.count() << ","
             << subtractTime.count() << ","
             << sharpenTime.count() << ","
-            << histogramCalcTime.count() << ","
-            << histogramEqualTime.count() << ","
+            << histogramTotalTime.count() << ","
             << hsvToRgbTime.count() << ","
             << totalTime.count() << std::endl;
     

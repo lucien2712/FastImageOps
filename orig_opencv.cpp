@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     std::ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
-            << "Histogram Equalization,HSVtoRGB,Total Time" << std::endl;
+            << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
     // 定義迭代次數
     int numIter = 10; // 減少迭代次數以加快處理

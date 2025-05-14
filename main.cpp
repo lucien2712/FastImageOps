@@ -50,6 +50,7 @@ void histogramCalcPar(const cv::Mat inputImage, unsigned int imHistogram[]);
 void histogramEqualPar(const cv::Mat inputImage, cv::Mat outputImage, const unsigned int imHistogram[]);
 void hsvToRgbPar(cv::Mat inputImage, cv::Mat outputImage);
 std::string getexepath();
+void histogramCalcAndEqualPar(const cv::Mat inputImage, cv::Mat outputImage);
 
 // 解析尺寸字符串 (如 "778x1036")
 bool parseSize(const std::string& sizeStr, int& width, int& height) {
@@ -151,7 +152,7 @@ int main(int argc, char const *argv[])
     std::ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
-            << "Histogram Calculation,Histogram Equalization,HSVtoRGB,Total Time" << std::endl;
+            << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
 
     // STEP 1 - COLORSPACE CONVERSION
     // Image was converted into HSV colorspace and V(Luminance component) channel of HSV image is used for local and global enhancement
@@ -239,44 +240,46 @@ int main(int argc, char const *argv[])
     " image by using "  << numthread << " thread(s) " << "is " <<  std::chrono::duration <double, std::milli> (timeEllap4).count()  << " ms..." << std::endl;
 
     // STEP 3 - GLOBAL ENHANCEMENT
-    // Histogram Equalization
-    unsigned int imHistogram[256] = {0};
+    // Histogram Calculation and Equalization (Combined)
     cv::Mat locallyEnhancedImage = sharpenedImage.clone();
     cv::Mat locallyEnhancedImageTemp = sharpenedImage.clone();//Temp val for time eval
 
-    cv::Mat globallyEnhancedImage = locallyEnhancedImageTemp.clone();
+    cv::Mat globallyEnhancedImage = locallyEnhancedImage.clone();
     cv::Mat globallyEnhancedImageTemp = locallyEnhancedImage.clone();//Temp val for time eval
 
-    //Global Enhancement
-    histogramCalcPar(locallyEnhancedImage, imHistogram);
+    // 執行處理（單次，無計時）
+    histogramCalcAndEqualPar(locallyEnhancedImage, globallyEnhancedImage);
 
-    histogramEqualPar(locallyEnhancedImage, globallyEnhancedImage, imHistogram);
-
-    //Time Evaluation
-    for(int i = 0; i < numIter; ++i){
-        std::fill(imHistogram, imHistogram + 256, 0); // 重置直方圖
-        start = std::chrono::high_resolution_clock::now();
-        histogramCalcPar(locallyEnhancedImageTemp, imHistogram);
-        end = std::chrono::high_resolution_clock::now();
-        timeEllap5 += (end - start);
-    }
-    timeEllap5 /= numIter;
-
-    std::cout << "Histogram Calculation Processing Time for "  << inputImageV.rows << " X " << inputImageV.cols <<
-    " image by using " << numthread << " threads is " <<  std::chrono::duration <double, std::milli> (timeEllap5).count()
-    << " ms..." << std::endl;
-
+    // 時間評估 - 合併的直方圖計算和均衡化
+    auto timeEllapHistogram = (end - start); // 初始化為 0
     for(int i = 0; i < numIter; ++i){
         start = std::chrono::high_resolution_clock::now();
-        histogramEqualPar(locallyEnhancedImageTemp, globallyEnhancedImageTemp, imHistogram);
+        histogramCalcAndEqualPar(locallyEnhancedImageTemp, globallyEnhancedImageTemp);
         end = std::chrono::high_resolution_clock::now();
-        timeEllap6 += (end - start);
+        timeEllapHistogram += (end - start);
     }
-    timeEllap6 /= numIter;
+    timeEllapHistogram /= numIter;
 
-    std::cout << "Histogram Equalization Processing Time for "  << inputImageV.rows << " X " << inputImageV.cols <<
-    " image by using " << numthread << " threads is " <<  std::chrono::duration <double, std::milli> (timeEllap6).count()
-    << " ms..." << std::endl;
+    std::cout << "Combined Histogram Calculation and Equalization Processing Time for "
+             << inputImageV.rows << " X " << inputImageV.cols
+             << " image by using " << numthread << " threads is "
+             << std::chrono::duration<double, std::milli>(timeEllapHistogram).count()
+             << " ms..." << std::endl;
+
+    // 為了與原始程式碼保持相容性，我們需要保留原始的 timeEllap5 和 timeEllap6
+    // 可以人為地將合併後的時間分配至這兩個變數
+    // 分配比例可以是 50/50 或基於您的實驗結果設定其他比例
+
+    // 假設將總時間的 50% 分配給 timeEllap5，另 50% 分配給 timeEllap6
+    timeEllap5 = timeEllapHistogram / 2;
+    timeEllap6 = timeEllapHistogram / 2;
+
+    std::cout << "Estimated Histogram Calculation Time: " 
+             << std::chrono::duration<double, std::milli>(timeEllap5).count() 
+             << " ms" << std::endl;
+    std::cout << "Estimated Histogram Equalization Time: " 
+             << std::chrono::duration<double, std::milli>(timeEllap6).count() 
+             << " ms" << std::endl;
 
     // Merging of enhanced H band and S, V bands
     cv::Mat channels[3] = {inputImageH, inputImageS, globallyEnhancedImage};
@@ -300,7 +303,7 @@ int main(int argc, char const *argv[])
     " image by using " << numthread << " threads is "  <<  std::chrono::duration <double, std::milli> (timeEllap7).count()
     << " ms..." << std::endl;
 
-    auto totalTime = timeEllap1 + timeEllap2 + timeEllap3 + timeEllap4 + timeEllap5 + timeEllap6 + timeEllap7;
+    auto totalTime = timeEllap1 + timeEllap2 + timeEllap3 + timeEllap4 + timeEllapHistogram + timeEllap7;
 
     std::cout << "Total Processing Time for "  << inputImageV.rows << " X " << inputImageV.cols <<
     " image by using " << numthread << " threads is "  <<  std::chrono::duration <double, std::milli> (totalTime).count() << " ms..." << std::endl;
@@ -322,8 +325,7 @@ int main(int argc, char const *argv[])
            << t2 << "," 
            << t3 << "," 
            << t4 << "," 
-           << t5 << "," 
-           << t6 << "," 
+           << std::chrono::duration <double, std::milli> (timeEllapHistogram).count() << "," 
            << t7 << "," 
            << t8 << std::endl;
 
@@ -592,4 +594,47 @@ std::string getexepath()
 	char result[ PATH_MAX ];
 	ssize_t count = readlink( "/proc/self/exe", result, PATH_MAX );
 	return std::string( result, (count > 0) ? count : 0 );
+}
+
+// 新合併的直方圖計算和均衡化函數
+void histogramCalcAndEqualPar(const cv::Mat inputImage, cv::Mat outputImage)
+{
+    int numTotalPixels = inputImage.rows * inputImage.cols; 
+    unsigned int imHistogram[256] = {0};
+    
+    // 1. 計算直方圖
+    #pragma omp parallel for reduction(+: imHistogram[:256])
+    for(int i=0; i<inputImage.rows; ++i){
+        for(int j=0; j<inputImage.cols; ++j){
+            imHistogram[inputImage.at<uchar>(i,j)] += 1;
+        }
+    }
+    
+    // 2. 計算每個灰階值的機率密度
+    double cumDistFunc[256] = {.0};
+    #pragma omp parallel for
+    for(int i = 0; i < 256; ++i){
+        cumDistFunc[i] = static_cast<double>(imHistogram[i])/static_cast<double>(numTotalPixels);
+    }
+    
+    // 3. 建立轉換函數
+    int transFunc[256] = {0}; 
+    double sumProb = 0.0;
+    
+    #pragma omp parallel for reduction(+: sumProb)
+    for(int i = 0; i < 256; i++){
+        sumProb = 0.0;
+        for(int j = 0; j <= i; j++){
+            sumProb += cumDistFunc[j];
+        }
+        transFunc[i] = 255 * sumProb;
+    }
+    
+    // 4. 應用轉換函數到輸出影像
+    #pragma omp parallel for shared(outputImage)
+    for(int i = 0; i < inputImage.rows; i++){
+        for(int j = 0; j < inputImage.cols; j++){
+            outputImage.at<uchar>(i,j) = transFunc[inputImage.at<uchar>(i,j)];
+        }
+    }
 }
