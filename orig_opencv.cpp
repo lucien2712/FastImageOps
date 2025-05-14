@@ -87,18 +87,21 @@ int main(int argc, char *argv[])
     std::string basename = filename.substr(0, dot_pos);
     std::string extension = filename.substr(dot_pos);
     
+    // 確保 results 目錄存在
+    std::filesystem::create_directory("results");
+    
     // 設置CSV結果文件
-    std::string resultpath = basename + "_" + sizeStr + "_opencv.csv";
+    std::string resultpath = "results/" + basename + "_" + sizeStr + "_opencv.csv";
     std::ofstream outFile;
     outFile.open(resultpath);
-    outFile << "Image,Size,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
+    outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
     // 定義迭代次數
     int numIter = 10; // 減少迭代次數以加快處理
     
     // 輸出檔案名稱
-    std::string outputFilename = basename + "_" + sizeStr + "_enhanced_opencv" + extension;
+    std::string outputFilename = "results/" + basename + "_" + sizeStr + "_opencv" + extension;
     
     // 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
@@ -215,6 +218,7 @@ int main(int argc, char *argv[])
     // 寫入結果到CSV文件
     outFile << basename << ","
             << resizedImage.cols << "x" << resizedImage.rows << ","
+            << "1" << ","
             << rgbToHsvTime.count() << ","
             << gaussianBlurTime.count() << ","
             << subtractTime.count() << ","

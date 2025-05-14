@@ -7,8 +7,8 @@
 ## 📦 專案結構
 | 檔案 | 說明 |
 |------|------|
-| `serial.cpp` | 序列化運算基礎實現 (對照組) |
-| `main.cpp` | **主程式** (修改自 [batuhanhangun/MSc-Thesis](https://github.com/batuhanhangun/MSc-Thesis)) |
-| `test.cpp` | 效能測試與基準分析 |
+| `Vserial.cpp` | 序列化運算基礎實現 (對照組) |
+| `Vopenmp.cpp` | **主程式** (修改自 [batuhanhangun/MSc-Thesis](https://github.com/batuhanhangun/MSc-Thesis)) |
+| `Vproposed.cpp` | 效能測試與基準分析 |
 | `run.sh` | 一鍵執行腳本 |
 | `snow.png` | 測試用範例影像 |

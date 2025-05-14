@@ -3,11 +3,11 @@
 https://ieeexplore.ieee.org/document/8071892
 
 編譯命令:
-g++ -g -Wall -O3 -o test_optimized test.cpp `pkg-config --cflags --libs opencv4` -fopenmp -march=native -ffast-math -funroll-loops -ftree-vectorize
+g++ -g -Wall -O3 -o Vproposed Vproposed.cpp `pkg-config --cflags --libs opencv4` -fopenmp -march=native -ffast-math -funroll-loops -ftree-vectorize
 
 執行方式:
-./test_optimized <imagename> <threads> <size>
-例如: ./test_optimized snow.png 4 778x1036
+./Vproposed <imagename> <threads> <size>
+例如: ./Vproposed snow.png 4 778x1036
 */
 
 #include <opencv2/opencv.hpp>
@@ -27,6 +27,7 @@ g++ -g -Wall -O3 -o test_optimized test.cpp `pkg-config --cflags --libs opencv4`
 #include <vector>
 #include <immintrin.h> // 支援SIMD指令
 #include <sstream>
+#include <filesystem>
 
 // 添加命名空間
 using namespace std;
@@ -195,13 +196,16 @@ int main(int argc, char const *argv[])
     string basename = filename.substr(0, dot_pos);
     string extension = filename.substr(dot_pos);
     
+    // 確保results目錄存在
+    filesystem::create_directory("results");
+    
     string sizemodifier = to_string(inputImage.rows) + "x" + to_string(inputImage.cols);
     string threadModifier = "_t" + to_string(optimalThreads);
-    string outimagename = basename + "_" + sizemodifier + threadModifier + "_optimized" + extension;
+    string outimagename = "results/" + basename + "_" + sizeStr + "_Vproposed" + threadModifier + extension;
     cout << "Output image file name: " << outimagename << endl;
 
     // 創建CSV結果文件
-    string resultpath = basename + "_" + sizeStr + "_threads" + to_string(optimalThreads) + "_optimized.csv";
+    string resultpath = "results/" + basename + "_" + sizeStr + "_Vproposed_threads" + to_string(optimalThreads) + ".csv";
     ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,Threads,BlockSize,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"

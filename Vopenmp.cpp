@@ -5,11 +5,11 @@ This implementation includes parallel version which uses OpenMP
 Author: Batuhan HANGÜN
 
 Compilation:
-g++ -g -Wall -o main main.cpp `pkg-config --cflags --libs opencv4` -fopenmp
+g++ -g -Wall -o Vpenmp Vpenmp.cpp `pkg-config --cflags --libs opencv4` -fopenmp
 
 Execution:
-./main <imagename> [threads] [size]
-./main snow.png 4 778x1036
+./Vpenmp <imagename> [threads] [size]
+./Vpenmp snow.png 4 778x1036
 */
 
 #include <opencv2/opencv.hpp>
@@ -27,6 +27,7 @@ Execution:
 #include <math.h>       
 #include <limits>
 #include <sstream>
+#include <filesystem>
 
 #define FILTERSIZE 5
 
@@ -142,13 +143,16 @@ int main(int argc, char const *argv[])
     std::string basename = filename.substr(0, dot_pos);
     std::string extension = filename.substr(dot_pos);
 
+    // 確保results目錄存在
+    std::filesystem::create_directory("results");
+
     std::string sizemodifier = std::to_string(inputImage.rows) + "_" + std::to_string(inputImage.cols);
     std::string threadModifier = "_t" + std::to_string(numthread);
-    std::string outimagename = basename + "_" + sizemodifier + threadModifier + extension;
+    std::string outimagename = "results/" + basename + "_" + sizeStr + "_Vopenmp" + threadModifier + extension;
     std::cout << "Output image file name: " << outimagename << std::endl;
 
     // 創建CSV結果文件
-    std::string resultpath = basename + "_" + sizeStr + "_threads" + std::to_string(numthread) + ".csv";
+    std::string resultpath = "results/" + basename + "_" + sizeStr + "_Vopenmp_threads" + std::to_string(numthread) + ".csv";
     std::ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"

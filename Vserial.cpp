@@ -5,11 +5,11 @@ This implementation only includes CPU version using OpenCV built-in functions
 Author: Batuhan HANGÜN
 
 Compilation:
-g++ -g -Wall -o serial serial.cpp `pkg-config --cflags --libs opencv4`
+g++ -g -Wall -o Vserial Vserial.cpp `pkg-config --cflags --libs opencv4`
 
 Execution:
-./serial <imagename> <size>
-Example: ./serial snow.png 778x1036
+./Vserial <imagename> <size>
+Example: ./Vserial snow.png 778x1036
 */
 
 #include <iostream>
@@ -435,18 +435,20 @@ int main(int argc, char *argv[])
     std::string extension = filename.substr(dot_pos);
     
     // 創建結果目錄
+    std::filesystem::create_directory("results");
+    
     // 設置CSV結果文件
-    std::string resultpath = basename + "_" + sizeStr + "_serial.csv";
+    std::string resultpath = "results/" + basename + "_" + sizeStr + "_Vserial.csv";
     std::ofstream outFile;
     outFile.open(resultpath);
-    outFile << "Image,Size,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
+    outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
     // 定義迭代次數
     int numIter = 10; // 減少迭代次數以加快處理
     
     // 輸出檔案名稱
-    std::string outputFilename = basename + "_" + sizeStr + "_enhanced" + extension;
+    std::string outputFilename = "results/" + basename + "_" + sizeStr + "_Vserial" + extension;
     
     //Creating time evaluation variables
     auto start = std::chrono::high_resolution_clock::now();
@@ -566,6 +568,7 @@ int main(int argc, char *argv[])
     // 寫入結果到CSV文件
     outFile << basename << ","
             << resizedImage.cols << "x" << resizedImage.rows << ","
+            << "1" << ","  // 添加 Threads 欄位，設為 1
             << rgbToHsvTime.count() << ","
             << blurTime.count() << ","
             << subtractTime.count() << ","
