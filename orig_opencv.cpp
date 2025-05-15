@@ -17,6 +17,7 @@ Example: ./orig_opencv snow.png 778x1036
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <thread>
 
 // 解析尺寸字符串 (如 "778x1036")
 bool parseSize(const std::string& sizeStr, int& width, int& height) {
@@ -97,13 +98,22 @@ int main(int argc, char *argv[])
     outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
-    // 定義迭代次數
-    int numIter = 10; // 減少迭代次數以加快處理
-    
     // 輸出檔案名稱
     std::string outputFilename = "results/" + basename + "_" + sizeStr + "_opencv" + extension;
     
-    // 創建時間評估變量
+    // =========== 修改: 統一計時架構 ===========
+    // 1. 預先分配所有需要的矩陣
+    cv::Mat inputImageHsv(resizedImage.size(), resizedImage.type());
+    cv::Mat blurredImage(resizedImage.size(), CV_8UC1);
+    cv::Mat imageMask(resizedImage.size(), CV_8UC1);
+    cv::Mat sharpenedImage(resizedImage.size(), CV_8UC1);
+    cv::Mat globallyEnhancedImage(resizedImage.size(), CV_8UC1);
+    cv::Mat outputHSV(resizedImage.size(), resizedImage.type());
+    cv::Mat outputImage(resizedImage.size(), resizedImage.type());
+    std::vector<cv::Mat> channels(3);
+    std::vector<cv::Mat> outChannels(3);
+    
+    // 2. 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
     auto rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
@@ -113,9 +123,20 @@ int main(int argc, char *argv[])
     auto equalizeHistTime = std::chrono::duration<double, std::milli>::zero();
     auto hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
     
-    // STEP 1 - RGB TO HSV CONVERSION
-    cv::Mat inputImageHsv;
+    // 3. 定義統一的迭代次數
+    const int warmupIter = 3;  // 熱身迭代次數
+    const int numIter = 10;    // 計時迭代次數
     
+    // =========== STEP 1: RGB TO HSV CONVERSION ===========
+    // 熱身迭代（不計時）
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::cvtColor(resizedImage, inputImageHsv, cv::COLOR_BGR2HSV);
+    }
+    
+    // 強制系統同步
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    // 計時迭代
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         cv::cvtColor(resizedImage, inputImageHsv, cv::COLOR_BGR2HSV);
@@ -126,16 +147,19 @@ int main(int argc, char *argv[])
     
     std::cout << "RGB 轉 HSV 時間: " << rgbToHsvTime.count() << " ms" << std::endl;
     
-    // 分離 HSV 通道
-    std::vector<cv::Mat> channels;
+    // 分離 HSV 通道 - 不計入時間
     cv::split(inputImageHsv, channels);
-    cv::Mat inputImageH = channels[0];
-    cv::Mat inputImageS = channels[1];
-    cv::Mat inputImageV = channels[2];
+    cv::Mat& inputImageH = channels[0];
+    cv::Mat& inputImageS = channels[1];
+    cv::Mat& inputImageV = channels[2];
     
-    // STEP 2 - LOCAL ENHANCEMENT
-    // 1. 圖像模糊
-    cv::Mat blurredImage;
+    // =========== STEP 2-1: 圖像模糊 ===========
+    // 熱身迭代
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::GaussianBlur(inputImageV, blurredImage, cv::Size(5, 5), 0, 0);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
@@ -147,8 +171,13 @@ int main(int argc, char *argv[])
     
     std::cout << "圖像模糊時間: " << gaussianBlurTime.count() << " ms" << std::endl;
     
-    // 2. 圖像相減
-    cv::Mat imageMask;
+    // =========== STEP 2-2: 圖像相減 ===========
+    // 熱身迭代
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::subtract(inputImageV, blurredImage, imageMask);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
@@ -160,9 +189,15 @@ int main(int argc, char *argv[])
     
     std::cout << "圖像相減時間: " << subtractTime.count() << " ms" << std::endl;
     
-    // 3. 圖像銳化 (添加掩碼)
+    // =========== STEP 2-3: 圖像銳化 ===========
     int weight = 10;
-    cv::Mat sharpenedImage;
+    
+    // 熱身迭代
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::addWeighted(inputImageV, 1.0, imageMask, weight, 0, sharpenedImage);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
@@ -174,8 +209,13 @@ int main(int argc, char *argv[])
     
     std::cout << "圖像銳化時間: " << addTime.count() << " ms" << std::endl;
     
-    // STEP 3 - GLOBAL ENHANCEMENT (直方圖均衡化)
-    cv::Mat globallyEnhancedImage;
+    // =========== STEP 3: 直方圖均衡化 ===========
+    // 熱身迭代
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::equalizeHist(sharpenedImage, globallyEnhancedImage);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
@@ -187,13 +227,19 @@ int main(int argc, char *argv[])
     
     std::cout << "直方圖均衡化時間: " << equalizeHistTime.count() << " ms" << std::endl;
     
-    // 合併 HSV 通道
-    cv::Mat outputHSV;
-    std::vector<cv::Mat> outChannels = {inputImageH, inputImageS, globallyEnhancedImage};
+    // 合併 HSV 通道 - 不計入時間
+    outChannels[0] = inputImageH;
+    outChannels[1] = inputImageS;
+    outChannels[2] = globallyEnhancedImage;
     cv::merge(outChannels, outputHSV);
     
-    // HSV 到 RGB 轉換
-    cv::Mat outputImage;
+    // =========== STEP 4: HSV 到 RGB 轉換 ===========
+    // 熱身迭代
+    for (int i = 0; i < warmupIter; ++i) {
+        cv::cvtColor(outputHSV, outputImage, cv::COLOR_HSV2BGR);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();

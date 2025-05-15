@@ -28,6 +28,7 @@ Execution:
 #include <limits>
 #include <sstream>
 #include <filesystem>
+#include <thread>
 
 #define FILTERSIZE 5
 
@@ -158,26 +159,47 @@ int main(int argc, char const *argv[])
     outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
 
-    // STEP 1 - COLORSPACE CONVERSION
-    // Image was converted into HSV colorspace and V(Luminance component) channel of HSV image is used for local and global enhancement
-
-    cv::Mat outputImage = inputImage.clone(); //Output image Parallel
-
-    //Converting image from RGB to HSV colorspace
+    // =========== 修改: 統一計時架構 ===========
+    // 1. 預先分配所有需要的矩陣
+    cv::Mat outputImage = inputImage.clone(); 
     cv::Mat inputImageHsv = inputImage.clone();
-
+    cv::Mat inputImageHsvChannels[3];
+    cv::Mat blurredImage;
+    cv::Mat imageMask;
+    cv::Mat sharpenedImage(inputImage.rows, inputImage.cols, CV_8UC1);
+    cv::Mat locallyEnhancedImage;
+    cv::Mat locallyEnhancedImageTemp;
+    cv::Mat globallyEnhancedImage;
+    cv::Mat globallyEnhancedImageTemp;
+    cv::Mat outputImageTemp;
+    
+    // 2. 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
-    auto timeEllap1 = (end - start);
-    auto timeEllap2 = (end - start);
-    auto timeEllap3 = (end - start);
-    auto timeEllap4 = (end - start);
-    auto timeEllap5 = (end - start);
-    auto timeEllap6 = (end - start);
-    auto timeEllap7 = (end - start);
-    int numIter = 10; // 減少迭代次數，特別是對大圖像
+    auto timeEllap1 = (end - start); // RGB到HSV
+    auto timeEllap2 = (end - start); // 模糊
+    auto timeEllap3 = (end - start); // 相減
+    auto timeEllap4 = (end - start); // 銳化
+    auto timeEllap7 = (end - start); // HSV到RGB
+    auto timeEllapHistogram = (end - start); // 合併的直方圖操作
+    
+    // 3. 定義統一的迭代次數
+    const int warmupIter = 3;  // 熱身迭代次數
+    const int numIter = 10;    // 計時迭代次數
 
-    for(int i = 0; i < numIter; ++i){
+    // =========== STEP 1: RGB到HSV轉換 ===========
+    // 熱身迭代（不計時）
+    for(int i = 0; i < warmupIter; ++i) {
+        rgbToHsvPar(inputImage, inputImageHsv);
+    }
+    
+    // 強制系統同步
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    // 計時迭代
+    timeEllap1 = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         rgbToHsvPar(inputImage, inputImageHsv);
         end = std::chrono::high_resolution_clock::now();
@@ -189,25 +211,27 @@ int main(int argc, char const *argv[])
     " image " << "by using " << numthread << " thread(s) " << "is " <<  std::chrono::duration <double, std::milli> (timeEllap1).count()
     << " ms..." << std::endl;
 
-    //Splitting V channel for later use
-    cv::Mat inputImageHsvChannels[3];
+    // 分離V通道 - 不計入時間
     cv::split(inputImageHsv, inputImageHsvChannels);
+    cv::Mat& inputImageH = inputImageHsvChannels[0];
+    cv::Mat& inputImageS = inputImageHsvChannels[1];
+    cv::Mat& inputImageV = inputImageHsvChannels[2];
 
-    cv::Mat inputImageH = inputImageHsvChannels[0];
-    cv::Mat inputImageS = inputImageHsvChannels[1];
-    cv::Mat inputImageV = inputImageHsvChannels[2];
+    // 初始化處理矩陣 - 不計入時間
+    blurredImage = inputImageV.clone();
+    imageMask = inputImageV.clone();
 
-    // STEP 2 - LOCAL ENHANCEMENT
-    // 1.Blurring of the image
-    // 2.Subtracting the blurred image from the original image to make the mask
-    // 3.Adding mask to the original image(Sharpening the image)
-
-    cv::Mat blurredImage = inputImageV.clone();
-    cv::Mat imageMask = inputImageV.clone();
-
-    cv::Mat sharpenedImage(inputImageV.rows, inputImageV.cols, CV_8UC1);
-
-    for(int i = 0; i < numIter; ++i){
+    // =========== STEP 2-1: 圖像模糊 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        imageBlurPar(inputImageV, blurredImage, Filter);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap2 = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         imageBlurPar(inputImageV, blurredImage, Filter);
         end = std::chrono::high_resolution_clock::now();
@@ -219,9 +243,17 @@ int main(int argc, char const *argv[])
     " image " << "by using " << numthread << " thread(s) " << "is " <<  std::chrono::duration <double, std::milli> (timeEllap2).count()
     << " ms..." << std::endl;
 
-    //Subtracting the Blurred Image from the Original Image
-
-    for(int i = 0; i < numIter; ++i){
+    // =========== STEP 2-2: 圖像相減 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        subtractImagePar(inputImageV, blurredImage, imageMask);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap3 = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         subtractImagePar(inputImageV, blurredImage, imageMask);
         end = std::chrono::high_resolution_clock::now();
@@ -232,7 +264,17 @@ int main(int argc, char const *argv[])
     std::cout << "Image Subtracting Processing Time for "  << inputImageV.rows << " X " << inputImageV.cols <<
     " image by using "  << numthread << " thread(s) " << "is " <<  std::chrono::duration <double, std::milli> (timeEllap3).count()  << " ms..." << std::endl;
 
-    for(int i = 0; i < numIter; ++i){
+    // =========== STEP 2-3: 圖像銳化 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        sharpenImagePar(inputImageV, imageMask, sharpenedImage);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap4 = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         sharpenImagePar(inputImageV, imageMask, sharpenedImage);
         end = std::chrono::high_resolution_clock::now();
@@ -243,20 +285,27 @@ int main(int argc, char const *argv[])
     std::cout << "Image Sharpening Processing Time for "  << inputImageV.rows << " X " << inputImageV.cols <<
     " image by using "  << numthread << " thread(s) " << "is " <<  std::chrono::duration <double, std::milli> (timeEllap4).count()  << " ms..." << std::endl;
 
-    // STEP 3 - GLOBAL ENHANCEMENT
-    // Histogram Calculation and Equalization (Combined)
-    cv::Mat locallyEnhancedImage = sharpenedImage.clone();
-    cv::Mat locallyEnhancedImageTemp = sharpenedImage.clone();//Temp val for time eval
-
-    cv::Mat globallyEnhancedImage = locallyEnhancedImage.clone();
-    cv::Mat globallyEnhancedImageTemp = locallyEnhancedImage.clone();//Temp val for time eval
-
-    // 執行處理（單次，無計時）
+    // =========== STEP 3: 直方圖處理 ===========
+    // 初始化處理矩陣 - 不計入時間
+    locallyEnhancedImage = sharpenedImage.clone();
+    locallyEnhancedImageTemp = sharpenedImage.clone();
+    globallyEnhancedImage = locallyEnhancedImage.clone();
+    globallyEnhancedImageTemp = locallyEnhancedImage.clone();
+    
+    // 執行合併的直方圖處理（單次，無計時）
     histogramCalcAndEqualPar(locallyEnhancedImage, globallyEnhancedImage);
+    
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        histogramCalcAndEqualPar(locallyEnhancedImageTemp, globallyEnhancedImageTemp);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // 時間評估 - 合併的直方圖計算和均衡化
-    auto timeEllapHistogram = (end - start); // 初始化為 0
-    for(int i = 0; i < numIter; ++i){
+    timeEllapHistogram = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         histogramCalcAndEqualPar(locallyEnhancedImageTemp, globallyEnhancedImageTemp);
         end = std::chrono::high_resolution_clock::now();
@@ -270,32 +319,25 @@ int main(int argc, char const *argv[])
              << std::chrono::duration<double, std::milli>(timeEllapHistogram).count()
              << " ms..." << std::endl;
 
-    // 為了與原始程式碼保持相容性，我們需要保留原始的 timeEllap5 和 timeEllap6
-    // 可以人為地將合併後的時間分配至這兩個變數
-    // 分配比例可以是 50/50 或基於您的實驗結果設定其他比例
-
-    // 假設將總時間的 50% 分配給 timeEllap5，另 50% 分配給 timeEllap6
-    timeEllap5 = timeEllapHistogram / 2;
-    timeEllap6 = timeEllapHistogram / 2;
-
-    std::cout << "Estimated Histogram Calculation Time: " 
-             << std::chrono::duration<double, std::milli>(timeEllap5).count() 
-             << " ms" << std::endl;
-    std::cout << "Estimated Histogram Equalization Time: " 
-             << std::chrono::duration<double, std::milli>(timeEllap6).count() 
-             << " ms" << std::endl;
-
-    // Merging of enhanced H band and S, V bands
+    // 合併處理後的通道 - 不計入時間
     cv::Mat channels[3] = {inputImageH, inputImageS, globallyEnhancedImage};
     cv::merge(channels, 3, outputImage);
-    cv::Mat outputImageTemp = outputImage.clone();//Temp val for time eval
+    outputImageTemp = outputImage.clone();
 
-    //Creating results
-    hsvToRgbPar(outputImage, outputImage);
-    cv::imwrite(outimagename, outputImage);
-
-    //Time Evaluation
-    for(int i = 0; i < numIter; ++i){
+    // =========== STEP 4: HSV到RGB轉換 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        hsvToRgbPar(outputImageTemp, outputImageTemp);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    // 正式計時
+    hsvToRgbPar(outputImage, outputImage); // 生成最終結果
+    
+    timeEllap7 = std::chrono::duration<double, std::milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         hsvToRgbPar(outputImageTemp, outputImageTemp);
         end = std::chrono::high_resolution_clock::now();
@@ -316,8 +358,6 @@ int main(int argc, char const *argv[])
     auto t2 = std::chrono::duration <double, std::milli> (timeEllap2).count();
     auto t3 = std::chrono::duration <double, std::milli> (timeEllap3).count();
     auto t4 = std::chrono::duration <double, std::milli> (timeEllap4).count();
-    auto t5 = std::chrono::duration <double, std::milli> (timeEllap5).count();
-    auto t6 = std::chrono::duration <double, std::milli> (timeEllap6).count();
     auto t7 = std::chrono::duration <double, std::milli> (timeEllap7).count();
     auto t8 = std::chrono::duration <double, std::milli> (totalTime).count();
 

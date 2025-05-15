@@ -28,6 +28,7 @@ g++ -g -Wall -O3 -o Vproposed Vproposed.cpp `pkg-config --cflags --libs opencv4`
 #include <immintrin.h> // 支援SIMD指令
 #include <sstream>
 #include <filesystem>
+#include <thread>
 
 // 添加命名空間
 using namespace std;
@@ -72,22 +73,6 @@ int calculateOptimalBlockSize(const Mat& image) {
         return 64;
     } else {                        // 超大影像
         return 128;
-    }
-}
-
-// 計算最佳執行緒數
-int calculateOptimalThreads(const Mat& image, int maxThreads) {
-    int pixelCount = image.rows * image.cols;
-    
-    // 對於小影像，減少執行緒數量避免過度並行開銷
-    if (pixelCount < 500000) {
-        return std::min(2, maxThreads);
-    } else if (pixelCount < 2000000) {
-        return std::min(4, maxThreads);
-    } else if (pixelCount < 4000000) {
-        return std::min(8, maxThreads);
-    } else {
-        return maxThreads;
     }
 }
 
@@ -178,12 +163,11 @@ int main(int argc, char const *argv[])
     }
 
     // 計算最佳的執行緒數量和塊大小
-    int optimalThreads = calculateOptimalThreads(inputImage, numThreads);
     int optimalBlockSize = calculateOptimalBlockSize(inputImage);
     
     // 設置執行緒數量
-    omp_set_num_threads(optimalThreads);
-    cout << "Using " << optimalThreads << " threads with block size " << optimalBlockSize << endl;
+    omp_set_num_threads(numThreads);
+    cout << "Using " << numThreads << " threads with block size " << optimalBlockSize << endl;
 
     // 優化路徑處理
     string filename = argv[1];
@@ -200,18 +184,19 @@ int main(int argc, char const *argv[])
     filesystem::create_directory("results");
     
     string sizemodifier = to_string(inputImage.rows) + "x" + to_string(inputImage.cols);
-    string threadModifier = "_t" + to_string(optimalThreads);
+    string threadModifier = "_t" + to_string(numThreads);
     string outimagename = "results/" + basename + "_" + sizeStr + "_Vproposed" + threadModifier + extension;
     cout << "Output image file name: " << outimagename << endl;
 
     // 創建CSV結果文件
-    string resultpath = "results/" + basename + "_" + sizeStr + "_Vproposed_threads" + to_string(optimalThreads) + ".csv";
+    string resultpath = "results/" + basename + "_" + sizeStr + "_Vproposed_threads" + to_string(numThreads) + ".csv";
     ofstream outFile;
     outFile.open(resultpath);
     outFile << "Image,Size,Threads,BlockSize,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << endl;
     
-    // 提前配置所有需要的記憶體，避免動態配置
+    // =========== 修改: 統一計時架構 ===========
+    // 1. 預先分配所有需要的記憶體
     Mat inputImageHsv(inputImage.size(), inputImage.type());
     Mat blurredImage(inputImage.size(), CV_8UC1);
     Mat imageMask(inputImage.size(), CV_8UC1);
@@ -220,47 +205,62 @@ int main(int argc, char const *argv[])
     Mat outputHSV(inputImage.size(), inputImage.type());
     Mat finalOutput(inputImage.size(), inputImage.type());
     
-    vector<Mat> inputImageHsvChannels;
+    vector<Mat> inputImageHsvChannels(3);
+    vector<Mat> channels(3);
     
+    // 2. 創建時間評估變量
     auto start = chrono::high_resolution_clock::now();
     auto end = chrono::high_resolution_clock::now();
     auto timeEllap1 = chrono::duration<double, milli>::zero();
     auto timeEllap2 = chrono::duration<double, milli>::zero();
     auto timeEllap3 = chrono::duration<double, milli>::zero();
     auto timeEllap4 = chrono::duration<double, milli>::zero();
-    auto timeEllap5 = chrono::duration<double, milli>::zero();
-    auto timeEllap6 = chrono::duration<double, milli>::zero();
     auto timeEllap7 = chrono::duration<double, milli>::zero();
+    auto timeEllapHistCombined = chrono::duration<double, milli>::zero();
     
-    // 資料較大時減少重複計時次數
-    int numIter = (inputImage.rows * inputImage.cols > 4000000) ? 5 : 10;
+    // 3. 定義統一的迭代次數
+    const int warmupIter = 3;  // 熱身迭代次數
+    const int numIter = 10;    // 計時迭代次數，確保與其他版本相同
 
-    // 步驟1: RGB到HSV轉換
-    // 首先進行一次計算來預熱快取和載入指令
-    rgbToHsvParOpt(inputImage, inputImageHsv, optimalBlockSize);
+    // =========== STEP 1: RGB到HSV轉換 ===========
+    // 熱身迭代（不計時）
+    for(int i = 0; i < warmupIter; ++i) {
+        rgbToHsvParOpt(inputImage, inputImageHsv, optimalBlockSize);
+    }
     
-    // 正式計時
-    for(int i = 0; i < numIter; ++i){
+    // 強制系統同步
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    // 計時迭代
+    timeEllap1 = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
         rgbToHsvParOpt(inputImage, inputImageHsv, optimalBlockSize);
         end = chrono::high_resolution_clock::now();
         timeEllap1 += (end - start);
     }
     timeEllap1 /= numIter;
-
+    
     cout << "RGB to HSV Conversion: " << timeEllap1.count() << " ms" << endl;
 
-    // 分離HSV通道
+    // 分離HSV通道 - 不計入時間
     split(inputImageHsv, inputImageHsvChannels);
     Mat& inputImageH = inputImageHsvChannels[0];
     Mat& inputImageS = inputImageHsvChannels[1];
     Mat& inputImageV = inputImageHsvChannels[2];
 
-    // 步驟2: 局部增強 - 模糊處理
-    // 預熱
-    imageBlurParOpt(inputImageV, blurredImage, optimalBlockSize);
+    // =========== STEP 2-1: 圖像模糊 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        imageBlurParOpt(inputImageV, blurredImage, optimalBlockSize);
+    }
     
-    for(int i = 0; i < numIter; ++i){
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap2 = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
         imageBlurParOpt(inputImageV, blurredImage, optimalBlockSize);
         end = chrono::high_resolution_clock::now();
@@ -270,11 +270,17 @@ int main(int argc, char const *argv[])
 
     cout << "Image Blur: " << timeEllap2.count() << " ms" << endl;
 
-    // 步驟3: 圖像相減
-    // 預熱
-    subtractImageParOpt(inputImageV, blurredImage, imageMask);
+    // =========== STEP 2-2: 圖像相減 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        subtractImageParOpt(inputImageV, blurredImage, imageMask);
+    }
     
-    for(int i = 0; i < numIter; ++i){
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap3 = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
         subtractImageParOpt(inputImageV, blurredImage, imageMask);
         end = chrono::high_resolution_clock::now();
@@ -284,12 +290,19 @@ int main(int argc, char const *argv[])
 
     cout << "Image Subtraction: " << timeEllap3.count() << " ms" << endl;
 
-    // 步驟4: 圖像銳化
+    // =========== STEP 2-3: 圖像銳化 ===========
     double weight = 10.0;
-    // It's a CPU-intensive operation, warming up is good for the CPU cache
-    sharpenImageParOpt(inputImageV, imageMask, sharpenedImage, weight);
     
-    for(int i = 0; i < numIter; ++i){
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        sharpenImageParOpt(inputImageV, imageMask, sharpenedImage, weight);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap4 = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
         sharpenImageParOpt(inputImageV, imageMask, sharpenedImage, weight);
         end = chrono::high_resolution_clock::now();
@@ -299,16 +312,20 @@ int main(int argc, char const *argv[])
 
     cout << "Image Sharpening: " << timeEllap4.count() << " ms" << endl;
 
-    // 步驟5-6: 合併的直方圖計算和均衡化
-    // 預熱
-    histogramCalcAndEqualParOpt(sharpenedImage, globallyEnhancedImage, optimalThreads);
+    // =========== STEP 3: 直方圖處理 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        histogramCalcAndEqualParOpt(sharpenedImage, globallyEnhancedImage, numThreads);
+    }
+    
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // 計時合併操作
-    auto timeEllapHistCombined = chrono::duration<double, milli>::zero();
-
-    for(int i = 0; i < numIter; ++i){
+    timeEllapHistCombined = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
-        histogramCalcAndEqualParOpt(sharpenedImage, globallyEnhancedImage, optimalThreads);
+        histogramCalcAndEqualParOpt(sharpenedImage, globallyEnhancedImage, numThreads);
         end = chrono::high_resolution_clock::now();
         timeEllapHistCombined += (end - start);
     }
@@ -316,24 +333,23 @@ int main(int argc, char const *argv[])
 
     cout << "Combined Histogram Processing: " << timeEllapHistCombined.count() << " ms" << endl;
 
-    // 為了保持與原始CSV輸出格式相容，將合併時間按原比例分配
-    // 使用一個簡單的規則：將總時間的 40% 分配給計算，60% 分配給均衡化
-    // 您可以根據實際經驗調整這些比例
-    timeEllap5 = timeEllapHistCombined * 0.4;
-    timeEllap6 = timeEllapHistCombined * 0.6;
-
-    cout << "Estimated Histogram Calculation: " << timeEllap5.count() << " ms" << endl;
-    cout << "Estimated Histogram Equalization: " << timeEllap6.count() << " ms" << endl;
-
-    // 合併HSV通道
-    vector<Mat> channels = {inputImageH, inputImageS, globallyEnhancedImage};
+    // 合併HSV通道 - 不計入時間
+    channels[0] = inputImageH;
+    channels[1] = inputImageS;
+    channels[2] = globallyEnhancedImage;
     merge(channels, outputHSV);
     
-    // 步驟7: HSV到RGB轉換
-    // 預熱
-    hsvToRgbParOpt(outputHSV, finalOutput, optimalBlockSize);
+    // =========== STEP 4: HSV到RGB轉換 ===========
+    // 熱身迭代
+    for(int i = 0; i < warmupIter; ++i) {
+        hsvToRgbParOpt(outputHSV, finalOutput, optimalBlockSize);
+    }
     
-    for(int i = 0; i < numIter; ++i){
+    #pragma omp barrier
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    
+    timeEllap7 = chrono::duration<double, milli>::zero();
+    for(int i = 0; i < numIter; ++i) {
         start = chrono::high_resolution_clock::now();
         hsvToRgbParOpt(outputHSV, finalOutput, optimalBlockSize);
         end = chrono::high_resolution_clock::now();
@@ -354,7 +370,7 @@ int main(int argc, char const *argv[])
     // 寫入結果到CSV文件
     outFile << basename << "," 
            << inputImage.cols << "x" << inputImage.rows << "," 
-           << optimalThreads << "," 
+           << numThreads << "," 
            << optimalBlockSize << ","
            << timeEllap1.count() << "," 
            << timeEllap2.count() << "," 
