@@ -13,7 +13,7 @@ for csv in $(find results -name "*_Vserial.csv"); do
         echo "處理文件: $csv"
         resolution=$(echo $csv | grep -o "[0-9]\+x[0-9]\+" || echo "original")
         # 使用 -F, 將CSV正確分隔，注意第10欄是HSVtoRGB，第11欄是Total_Time
-        tail -n 1 "$csv" | awk -F, -v version="Serial" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $11}' >> $OUTPUT_CSV
+        tail -n 1 "$csv" | awk -F, -v version="Serial" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10}' >> $OUTPUT_CSV
     fi
 done
 
@@ -25,7 +25,7 @@ for csv in $(find results -name "*_Vopenmp_threads*.csv"); do
         resolution=$(echo $csv | grep -o "[0-9]\+x[0-9]\+" || echo "original")
         threads=$(echo $csv | grep -o "threads[0-9]\+" | grep -o "[0-9]\+")
         # 使用 -F, 將CSV正確分隔，注意第10欄是HSVtoRGB，第11欄是Total_Time
-        tail -n 1 "$csv" | awk -F, -v version="OpenMP" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $11}' >> $OUTPUT_CSV
+        tail -n 1 "$csv" | awk -F, -v version="OpenMP" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10}' >> $OUTPUT_CSV
     fi
 done
 
@@ -37,7 +37,7 @@ for csv in $(find results -name "*_Vproposed_threads*.csv"); do
         resolution=$(echo $csv | grep -o "[0-9]\+x[0-9]\+" || echo "original")
         threads=$(echo $csv | grep -o "threads[0-9]\+" | grep -o "[0-9]\+")
         # 使用 -F, 將CSV正確分隔，注意第10欄是HSVtoRGB，第11欄是Total_Time
-        tail -n 1 "$csv" | awk -F, -v version="Proposed" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $11}' >> $OUTPUT_CSV
+        tail -n 1 "$csv" | awk -F, -v version="Proposed" -v res="$resolution" '{print version "," res "," $3 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10 "," $11}' >> $OUTPUT_CSV
     fi
 done
 
@@ -48,7 +48,7 @@ for csv in $(find results -name "*_opencv.csv"); do
         echo "處理文件: $csv"
         resolution=$(echo $csv | grep -o "[0-9]\+x[0-9]\+" || echo "original")
         # 使用 -F, 將CSV正確分隔，注意第10欄是HSVtoRGB，第11欄是Total_Time
-        tail -n 1 "$csv" | awk -F, -v version="OpenCV" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $11}' >> $OUTPUT_CSV
+        tail -n 1 "$csv" | awk -F, -v version="OpenCV" -v res="$resolution" '{print version "," res "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10}' >> $OUTPUT_CSV
     fi
 done
 

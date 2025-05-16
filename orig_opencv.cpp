@@ -116,12 +116,12 @@ int main(int argc, char *argv[])
     // 2. 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
-    auto rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
-    auto gaussianBlurTime = std::chrono::duration<double, std::milli>::zero();
-    auto subtractTime = std::chrono::duration<double, std::milli>::zero();
-    auto addTime = std::chrono::duration<double, std::milli>::zero();
-    auto equalizeHistTime = std::chrono::duration<double, std::milli>::zero();
-    auto hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> gaussianBlurTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> subtractTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> addTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> equalizeHistTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
     
     // 3. 定義統一的迭代次數
     const int warmupIter = 3;  // 熱身迭代次數

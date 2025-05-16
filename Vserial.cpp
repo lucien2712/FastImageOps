@@ -409,12 +409,12 @@ int main(int argc, char *argv[])
     // 2. 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
-    auto rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
-    auto blurTime = std::chrono::duration<double, std::milli>::zero();
-    auto subtractTime = std::chrono::duration<double, std::milli>::zero();
-    auto sharpenTime = std::chrono::duration<double, std::milli>::zero();
-    auto histogramTotalTime = std::chrono::duration<double, std::milli>::zero();
-    auto hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> blurTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> subtractTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> sharpenTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> histogramTotalTime = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
     
     // 3. 定義統一的迭代次數
     const int warmupIter = 3;  // 熱身迭代次數
@@ -430,7 +430,6 @@ int main(int argc, char *argv[])
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     // 計時迭代
-    rgbToHsvTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         rgbToHsv(resizedImage, inputImageHsv);
@@ -455,7 +454,6 @@ int main(int argc, char *argv[])
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    blurTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         imageBlur(inputImageV, blurredImage);
@@ -474,7 +472,6 @@ int main(int argc, char *argv[])
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    subtractTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         subtractImage(inputImageV, blurredImage, imageMask);
@@ -493,7 +490,6 @@ int main(int argc, char *argv[])
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    sharpenTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         sharpenImage(inputImageV, imageMask, sharpenedImage);
@@ -512,7 +508,6 @@ int main(int argc, char *argv[])
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    histogramTotalTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         histogramCalcAndEqual(sharpenedImage, globallyEnhancedImage);
@@ -538,7 +533,6 @@ int main(int argc, char *argv[])
     
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    hsvToRgbTime = std::chrono::duration<double, std::milli>::zero();
     for (int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         hsvToRgb(outputHSV, outputImage);

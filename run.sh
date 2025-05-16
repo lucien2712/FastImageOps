@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 測試圖像
-INPUT_IMAGE="snow.png"
+INPUT_IMAGE="chaewon.png"
 
 # 所有要測試的解析度
 RESOLUTIONS=("389x518" "778x1036" "1167x1554" "1556x2072" "1945x2590" "2334x3108" "2723x3626")

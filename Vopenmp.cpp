@@ -5,11 +5,11 @@ This implementation includes parallel version which uses OpenMP
 Author: Batuhan HANGÜN
 
 Compilation:
-g++ -g -Wall -o Vpenmp Vpenmp.cpp `pkg-config --cflags --libs opencv4` -fopenmp
+g++ -g -Wall -o Vopenmp Vopenmp.cpp `pkg-config --cflags --libs opencv4` -fopenmp
 
 Execution:
-./Vpenmp <imagename> [threads] [size]
-./Vpenmp snow.png 4 778x1036
+./Vopenmp <imagename> [threads] [size]
+./Vopenmp snow.png 4 778x1036
 */
 
 #include <opencv2/opencv.hpp>
@@ -176,12 +176,12 @@ int main(int argc, char const *argv[])
     // 2. 創建時間評估變量
     auto start = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
-    auto timeEllap1 = (end - start); // RGB到HSV
-    auto timeEllap2 = (end - start); // 模糊
-    auto timeEllap3 = (end - start); // 相減
-    auto timeEllap4 = (end - start); // 銳化
-    auto timeEllap7 = (end - start); // HSV到RGB
-    auto timeEllapHistogram = (end - start); // 合併的直方圖操作
+    std::chrono::duration<double, std::milli> timeEllap1 = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> timeEllap2 = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> timeEllap3 = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> timeEllap4 = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> timeEllap7 = std::chrono::duration<double, std::milli>::zero();
+    std::chrono::duration<double, std::milli> timeEllapHistogram = std::chrono::duration<double, std::milli>::zero();
     
     // 3. 定義統一的迭代次數
     const int warmupIter = 3;  // 熱身迭代次數
@@ -198,7 +198,6 @@ int main(int argc, char const *argv[])
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
     // 計時迭代
-    timeEllap1 = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         rgbToHsvPar(inputImage, inputImageHsv);
@@ -230,7 +229,6 @@ int main(int argc, char const *argv[])
     #pragma omp barrier
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    timeEllap2 = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         imageBlurPar(inputImageV, blurredImage, Filter);
@@ -252,7 +250,6 @@ int main(int argc, char const *argv[])
     #pragma omp barrier
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    timeEllap3 = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         subtractImagePar(inputImageV, blurredImage, imageMask);
@@ -273,7 +270,6 @@ int main(int argc, char const *argv[])
     #pragma omp barrier
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     
-    timeEllap4 = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         sharpenImagePar(inputImageV, imageMask, sharpenedImage);
@@ -304,7 +300,6 @@ int main(int argc, char const *argv[])
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // 時間評估 - 合併的直方圖計算和均衡化
-    timeEllapHistogram = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         histogramCalcAndEqualPar(locallyEnhancedImageTemp, globallyEnhancedImageTemp);
@@ -336,7 +331,6 @@ int main(int argc, char const *argv[])
     // 正式計時
     hsvToRgbPar(outputImage, outputImage); // 生成最終結果
     
-    timeEllap7 = std::chrono::duration<double, std::milli>::zero();
     for(int i = 0; i < numIter; ++i) {
         start = std::chrono::high_resolution_clock::now();
         hsvToRgbPar(outputImageTemp, outputImageTemp);
@@ -646,7 +640,7 @@ void histogramCalcAndEqualPar(const cv::Mat inputImage, cv::Mat outputImage)
     int numTotalPixels = inputImage.rows * inputImage.cols; 
     unsigned int imHistogram[256] = {0};
     
-    // 1. 計算直方圖
+    // 1. 計算直方圖 (這部分是正確的)
     #pragma omp parallel for reduction(+: imHistogram[:256])
     for(int i=0; i<inputImage.rows; ++i){
         for(int j=0; j<inputImage.cols; ++j){
@@ -654,28 +648,23 @@ void histogramCalcAndEqualPar(const cv::Mat inputImage, cv::Mat outputImage)
         }
     }
     
-    // 2. 計算每個灰階值的機率密度
-    double cumDistFunc[256] = {.0};
-    #pragma omp parallel for
-    for(int i = 0; i < 256; ++i){
-        cumDistFunc[i] = static_cast<double>(imHistogram[i])/static_cast<double>(numTotalPixels);
+    // 2. 計算累積分布函數 (CDF) - 這部分必須是序列的
+    unsigned int cdf[256] = {0};
+    cdf[0] = imHistogram[0];
+    for (int i = 1; i < 256; ++i) {
+        cdf[i] = cdf[i - 1] + imHistogram[i];
     }
     
-    // 3. 建立轉換函數
-    int transFunc[256] = {0}; 
-    double sumProb = 0.0;
-    
-    #pragma omp parallel for reduction(+: sumProb)
-    for(int i = 0; i < 256; i++){
-        sumProb = 0.0;
-        for(int j = 0; j <= i; j++){
-            sumProb += cumDistFunc[j];
-        }
-        transFunc[i] = 255 * sumProb;
+    // 3. 建立轉換函數 (LUT) - 這部分可以並行
+    unsigned char transFunc[256]; 
+    float scale = 255.0f / static_cast<float>(numTotalPixels);
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < 256; ++i) {
+        transFunc[i] = cv::saturate_cast<uchar>(scale * cdf[i]);
     }
     
-    // 4. 應用轉換函數到輸出影像
-    #pragma omp parallel for shared(outputImage)
+    // 4. 應用轉換函數到輸出影像 (這部分是正確的)
+    #pragma omp parallel for shared(outputImage, inputImage, transFunc) schedule(static)
     for(int i = 0; i < inputImage.rows; i++){
         for(int j = 0; j < inputImage.cols; j++){
             outputImage.at<uchar>(i,j) = transFunc[inputImage.at<uchar>(i,j)];
