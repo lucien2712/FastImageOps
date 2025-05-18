@@ -31,11 +31,11 @@ done
 
 # 查找並合併Vproposed產生的CSV
 echo "處理Vproposed結果..."
-for csv in $(find results -name "*_Vproposed_threads*.csv"); do
+for csv in $(find results -name "*_Vproposed_t*.csv" -o -name "*_Vproposed_threads*.csv"); do
     if [ -f "$csv" ]; then
         echo "處理文件: $csv"
         resolution=$(echo $csv | grep -o "[0-9]\+x[0-9]\+" || echo "original")
-        threads=$(echo $csv | grep -o "threads[0-9]\+" | grep -o "[0-9]\+")
+        threads=$(echo $csv | grep -o "threads[0-9]\+" | grep -o "[0-9]\+" || echo $csv | grep -o "_t[0-9]\+" | grep -o "[0-9]\+")
         # 使用 -F, 將CSV正確分隔，注意第10欄是HSVtoRGB，第11欄是Total_Time
         tail -n 1 "$csv" | awk -F, -v version="Proposed" -v res="$resolution" '{print version "," res "," $3 "," $5 "," $6 "," $7 "," $8 "," $9 "," $10 "," $11}' >> $OUTPUT_CSV
     fi
