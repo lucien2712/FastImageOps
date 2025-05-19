@@ -4,7 +4,7 @@ g++ -o orig_opencv orig_opencv.cpp -std=c++17 `pkg-config --cflags --libs opencv
 
 Execution:
 ./orig_opencv <imagename> <size>
-Example: ./orig_opencv snow.png 778x1036
+Example: ./orig_opencv chaewon.png 2723x3626
 */
 
 #include <iostream>
@@ -98,8 +98,13 @@ int main(int argc, char *argv[])
     outFile << "Image,Size,Threads,RGBtoHSV,Image Blur,Image Subtraction,Image Sharpening,"
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
-    // 輸出檔案名稱
-    std::string outputFilename = "results/" + basename + "_" + sizeStr + "_opencv" + extension;
+    // 設置輸出檔案名稱
+    std::string outputFilename_rgbToHsv = "results/" + basename + "_" + sizeStr + "_rgbToHsv" + extension;
+    std::string outputFilename_blur = "results/" + basename + "_" + sizeStr + "_blur" + extension;
+    std::string outputFilename_subtract = "results/" + basename + "_" + sizeStr + "_subtract" + extension;
+    std::string outputFilename_sharpen = "results/" + basename + "_" + sizeStr + "_sharpen" + extension;
+    std::string outputFilename_equalize = "results/" + basename + "_" + sizeStr + "_equalize" + extension;
+    std::string outputFilename_hsvToRgb = "results/" + basename + "_" + sizeStr + "_hsvToRgb" + extension;
     
     // =========== 修改: 統一計時架構 ===========
     // 1. 預先分配所有需要的矩陣
@@ -153,6 +158,10 @@ int main(int argc, char *argv[])
     cv::Mat& inputImageS = channels[1];
     cv::Mat& inputImageV = channels[2];
     
+    // 寫入圖像
+    cv::imwrite(outputFilename_rgbToHsv, inputImageHsv);
+    std::cout << "RGB 轉 HSV 圖像已儲存為: " << outputFilename_rgbToHsv << std::endl;
+    
     // =========== STEP 2-1: 圖像模糊 ===========
     // 熱身迭代
     for (int i = 0; i < warmupIter; ++i) {
@@ -171,6 +180,10 @@ int main(int argc, char *argv[])
     
     std::cout << "圖像模糊時間: " << gaussianBlurTime.count() << " ms" << std::endl;
     
+    // 寫入圖像
+    cv::imwrite(outputFilename_blur, blurredImage);
+    std::cout << "模糊圖像已儲存為: " << outputFilename_blur << std::endl;
+    
     // =========== STEP 2-2: 圖像相減 ===========
     // 熱身迭代
     for (int i = 0; i < warmupIter; ++i) {
@@ -188,6 +201,10 @@ int main(int argc, char *argv[])
     subtractTime /= numIter;
     
     std::cout << "圖像相減時間: " << subtractTime.count() << " ms" << std::endl;
+    
+    // 寫入圖像
+    cv::imwrite(outputFilename_subtract, imageMask);
+    std::cout << "相減圖像已儲存為: " << outputFilename_subtract << std::endl;
     
     // =========== STEP 2-3: 圖像銳化 ===========
     int weight = 10;
@@ -209,6 +226,10 @@ int main(int argc, char *argv[])
     
     std::cout << "圖像銳化時間: " << addTime.count() << " ms" << std::endl;
     
+    // 寫入圖像
+    cv::imwrite(outputFilename_sharpen, sharpenedImage);
+    std::cout << "銳化圖像已儲存為: " << outputFilename_sharpen << std::endl;
+    
     // =========== STEP 3: 直方圖均衡化 ===========
     // 熱身迭代
     for (int i = 0; i < warmupIter; ++i) {
@@ -226,6 +247,10 @@ int main(int argc, char *argv[])
     equalizeHistTime /= numIter;
     
     std::cout << "直方圖均衡化時間: " << equalizeHistTime.count() << " ms" << std::endl;
+    
+    // 寫入圖像
+    cv::imwrite(outputFilename_equalize, globallyEnhancedImage);
+    std::cout << "直方圖均衡化圖像已儲存為: " << outputFilename_equalize << std::endl;
     
     // 合併 HSV 通道 - 不計入時間
     outChannels[0] = inputImageH;
@@ -251,15 +276,15 @@ int main(int argc, char *argv[])
     
     std::cout << "HSV 轉 RGB 時間: " << hsvToRgbTime.count() << " ms" << std::endl;
     
+    // 寫入圖像
+    cv::imwrite(outputFilename_hsvToRgb, outputImage);
+    std::cout << "HSV 轉 RGB 圖像已儲存為: " << outputFilename_hsvToRgb << std::endl;
+    
     // 計算總時間和局部增強時間
     auto localEnhanceTime = gaussianBlurTime + subtractTime + addTime;
     auto totalTime = rgbToHsvTime + localEnhanceTime + equalizeHistTime + hsvToRgbTime;
     
     std::cout << "總處理時間: " << totalTime.count() << " ms" << std::endl;
-    
-    // 寫入結果圖像
-    cv::imwrite(outputFilename, outputImage);
-    std::cout << "增強後的圖像已儲存為: " << outputFilename << std::endl;
     
     // 寫入結果到CSV文件
     outFile << basename << ","
