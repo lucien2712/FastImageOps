@@ -41,16 +41,6 @@ bool parseSize(const std::string& sizeStr, int& width, int& height) {
     }
 }
 
-// 計算圖像直方圖 - 與 main.cpp 中的 histogramCalcPar 對應
-void histogramCalc(const cv::Mat& inputImage, unsigned int imHistogram[256]) {
-    std::fill(imHistogram, imHistogram + 256, 0);
-    for (int i = 0; i < inputImage.rows; ++i) {
-        for (int j = 0; j < inputImage.cols; ++j) {
-            imHistogram[inputImage.at<uchar>(i, j)]++;
-        }
-    }
-}
-
 // 使用5x5卷積核進行高斯模糊 - 與 main.cpp 中的 imageBlurPar 對應
 /**
  * @brief   對單通道灰階影像做 5×5 加權平均 (Gaussian-like) 模糊

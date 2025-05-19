@@ -48,8 +48,6 @@ void rgbToHsvPar(cv::Mat inputImage, cv::Mat outputImage);
 void imageBlurPar(cv::Mat inputImage, cv::Mat outputImage, const int Kernel[FILTERSIZE][FILTERSIZE]);
 void subtractImagePar(cv::Mat inputImage1, cv::Mat inputImage2, cv::Mat outputImage);
 void sharpenImagePar(cv::Mat inputImage1, cv::Mat inputImage2, cv::Mat outputImage);
-void histogramCalcPar(const cv::Mat inputImage, unsigned int imHistogram[]);
-void histogramEqualPar(const cv::Mat inputImage, cv::Mat outputImage, const unsigned int imHistogram[]);
 void hsvToRgbPar(cv::Mat inputImage, cv::Mat outputImage);
 std::string getexepath();
 void histogramCalcAndEqualPar(const cv::Mat inputImage, cv::Mat outputImage);
@@ -502,49 +500,6 @@ void sharpenImagePar(cv::Mat inputImage1, cv::Mat inputImage2, cv::Mat outputIma
 		#pragma omp parallel for shared(inputImage1, inputImage2, outputImage, weight) 
 		for(int j = 0; j < nCols; ++j){
 			t[j] = cv::saturate_cast<uchar>(p[j] + (weight * q[j]));
-		}
-	}
-}
-
-void histogramCalcPar(const cv::Mat inputImage, unsigned int imHistogram[])
-{
-    // 原始代碼，未更改
-	#pragma omp parallel for reduction(+: imHistogram[:256])
-	for(int i=0; i<inputImage.rows; ++i){
-		for(int j=0; j<inputImage.cols; ++j){
-			imHistogram[inputImage.at<uchar>(i,j)] += 1;
-		}
-	}
-}
-
-void histogramEqualPar(const cv::Mat inputImage, cv::Mat outputImage, const unsigned int imHistogram[])
-{
-    // 原始代碼，未更改
-	int numTotalPixels = inputImage.rows * inputImage.cols; 
-
-	double cumDistFunc[256] = {.0};
-	double sumProb  = 0.0;
-
-	#pragma omp parallel for
-	for(int i = 0; i < 256; ++i){
-		cumDistFunc[i] = static_cast<double>(imHistogram[i])/static_cast<double>(numTotalPixels);
-	}
-
-	int transFunc[256] = {0}; //Transfer function to convert source histogram to target histogram
-
-	#pragma omp parallel for reduction(+: sumProb)
-	for(int i = 0; i < 256; i++){
-		sumProb = 0.0;
-		for(int j = 0; j <= i; j++){
-			sumProb += cumDistFunc[j];
-		}
-		transFunc[i] = 255 * sumProb;
-	}
-
-	#pragma omp parallel for shared(outputImage)
-	for(int i = 0; i < inputImage.rows; i++){
-		for(int j = 0; j < inputImage.cols; j++){
-			outputImage.at<uchar>(i,j) = transFunc[inputImage.at<uchar>(i,j)];
 		}
 	}
 }
