@@ -99,12 +99,17 @@ int main(int argc, char *argv[])
             << "Histogram Processing,HSVtoRGB,Total Time" << std::endl;
     
     // 設置輸出檔案名稱
+    std::string outputFilename_resized = "results/" + basename + "_" + sizeStr + "_resized" + extension;
     std::string outputFilename_rgbToHsv = "results/" + basename + "_" + sizeStr + "_rgbToHsv" + extension;
     std::string outputFilename_blur = "results/" + basename + "_" + sizeStr + "_blur" + extension;
     std::string outputFilename_subtract = "results/" + basename + "_" + sizeStr + "_subtract" + extension;
     std::string outputFilename_sharpen = "results/" + basename + "_" + sizeStr + "_sharpen" + extension;
     std::string outputFilename_equalize = "results/" + basename + "_" + sizeStr + "_equalize" + extension;
     std::string outputFilename_hsvToRgb = "results/" + basename + "_" + sizeStr + "_hsvToRgb" + extension;
+    
+    // 儲存調整大小後的原始圖像
+    cv::imwrite(outputFilename_resized, resizedImage);
+    std::cout << "調整大小後的原始圖像已儲存為: " << outputFilename_resized << std::endl;
     
     // =========== 修改: 統一計時架構 ===========
     // 1. 預先分配所有需要的矩陣
